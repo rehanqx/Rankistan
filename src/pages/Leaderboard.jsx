@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import DevCard from '../components/DevCard';
+import CompareModal from '../components/CompareModal';
 import { CACHE_KEYS, cache } from '../utils/cache';
 import { normalizeLocationForDisplay } from '../utils/location';
 import { ensureLeaderboardTags, getAvailableTags } from '../utils/tags';
@@ -29,6 +30,13 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
   const [summaryByUser, setSummaryByUser] = useState({});
   const [loadingSummaryUser, setLoadingSummaryUser] = useState('');
   const [sortIndex, setSortIndex] = useState(0);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareSelection, setCompareSelection] = useState([]);
+  // The modal used to mount as soon as a second row was ticked, which covered
+  // the list and made a third selection impossible - so the "of 3" indicator
+  // and the 3-item branch in handleCompareSelect were both unreachable. Opening
+  // is now an explicit action.
+  const [compareOpen, setCompareOpen] = useState(false);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageInput, setPageInput] = useState('');
@@ -146,6 +154,22 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
     setSortIndex((prev) => (prev + 1) % SORT_OPTIONS.length);
   }
 
+  function handleCompareSelect(dev) {
+    if (!compareMode) return;
+    setCompareSelection((prev) => {
+      const idx = prev.findIndex((d) => d.username === dev.username);
+      if (idx !== -1) return prev.filter((_, i) => i !== idx);
+      if (prev.length >= 3) return [prev[1], prev[2], dev];
+      return [...prev, dev];
+    });
+  }
+
+  function handleCompareToggle() {
+    setCompareMode((prev) => !prev);
+    setCompareSelection([]);
+    setCompareOpen(false);
+  }
+
   return (
     <main className="min-h-screen relative overflow-hidden">
       <div className="absolute inset-0 grid-lines pointer-events-none"></div>
@@ -185,8 +209,18 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
                     <span className="material-symbols-outlined text-sm">sort</span>
                     SORT: {SORT_OPTIONS[sortIndex].label}
                   </button>
-                  
-                  {/* Clean Mobile Export Trigger */}
+                  <button
+                    type="button"
+                    onClick={handleCompareToggle}
+                    className={`md:hidden flex flex-1 basis-0 min-w-0 items-center justify-center gap-2 px-4 py-2 font-mono text-xs active:scale-95 transition-all ${
+                      compareMode
+                        ? 'bg-tertiary text-on-tertiary'
+                        : 'bg-surface-container-high border border-outline-variant text-on-surface'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-sm">compare_arrows</span>
+                    <span className="truncate">{compareMode ? 'EXIT' : 'COMPARE'}</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => exportCSV(filteredLeaderboard, CSV_EXPORT_COLUMNS)}
@@ -195,8 +229,18 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
                     <span className="material-symbols-outlined text-sm">download</span>
                     <span className="truncate">EXPORT CSV</span>
                   </button>
-                  
-                  {/* Clean Desktop Export Trigger */}
+                  <button
+                    type="button"
+                    onClick={handleCompareToggle}
+                    className={`hidden md:flex items-center justify-center gap-2 px-4 py-2 font-mono text-xs transition-colors ${
+                      compareMode
+                        ? 'bg-tertiary text-on-tertiary'
+                        : 'bg-surface-container-high border border-outline-variant text-on-surface hover:bg-surface-container-highest'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-sm">compare_arrows</span>
+                    COMPARE
+                  </button>
                   <button
                     type="button"
                     onClick={() => exportCSV(filteredLeaderboard, CSV_EXPORT_COLUMNS)}
@@ -256,6 +300,9 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
                         onGenerateBadge={onNavigateToBadge}
                         summary={summaryByUser[dev.username]}
                         loadingSummaryUser={loadingSummaryUser}
+                        compareMode={compareMode}
+                        isCompareSelected={compareSelection.some(d => d.username === dev.username)}
+                        onCompareSelect={handleCompareSelect}
                       />
                     ))
                   )}
@@ -333,6 +380,45 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
             </>
           )}
         </div>
+
+      {/* Compare selection indicator */}
+      {compareMode && compareSelection.length > 0 && (
+        <div className="mt-4 border border-tertiary bg-surface-container-lowest p-3 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 font-mono text-xs">
+            <span className="w-2 h-2 bg-tertiary animate-pulse"></span>
+            <span className="text-tertiary uppercase tracking-widest">
+              {compareSelection.length} of 3 Nodes Selected
+            </span>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <button
+              type="button"
+              onClick={() => setCompareOpen(true)}
+              disabled={compareSelection.length < 2}
+              className="border border-tertiary/60 px-3 py-1.5 font-mono text-xs uppercase tracking-widest text-tertiary hover:bg-tertiary/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Compare
+            </button>
+            <button
+              type="button"
+              onClick={handleCompareToggle}
+              className="text-outline hover:text-primary transition-colors font-mono text-xs uppercase"
+            >
+              Exit
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Compare Modal */}
+      {compareOpen && compareSelection.length >= 2 && (
+        <CompareModal
+          developers={compareSelection}
+          // Closing returns to the list with the selection intact, so a third
+          // node can be added and the modal reopened.
+          onClose={() => setCompareOpen(false)}
+        />
+      )}
       </div>
     </main>
   );
